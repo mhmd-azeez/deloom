@@ -1,0 +1,52 @@
+name = "hosaka-proxy"
+main = "src/index.tsx"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hosaka-proxy-db"
+database_id = "f7af8d71-70e3-4272-81aa-13ab2ce2015a"   # from: wrangler d1 create hosaka-proxy-db
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "<your-r2-bucket-name>"
+
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
+
+[vars]
+# Optional: restrict video sync to a key prefix (e.g. "uploads/")
+R2_PREFIX = ""
+# Optional: site name shown in the UI
+SITE_NAME = "Videos"
+
+# [env.production]
+# routes = [
+#   { pattern = "your-domain.com", custom_domain = true }
+# ]
+#
+# [[env.production.d1_databases]]
+# binding = "DB"
+# database_name = "hosaka-proxy-db"
+# database_id = "<your-d1-database-id>"
+#
+# [[env.production.r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "<your-r2-bucket-name>"
+#
+# [env.production.vars]
+# R2_PREFIX = ""
+# SITE_NAME = "Videos"
