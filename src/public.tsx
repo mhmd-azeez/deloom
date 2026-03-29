@@ -67,6 +67,9 @@ app.get("/v/:id", async (c) => {
   const title = video.title || "Untitled";
   const mediaDomain = c.env.MEDIA_DOMAIN;
   const mediaUrl = mediaDomain ? `https://${mediaDomain}/${video.r2_key}` : `/media/${encodeURIComponent(video.r2_key)}`;
+  const thumbKey = `thumbnails/${id}.jpg`;
+  const hasThumb = !!(await c.env.BUCKET.head(thumbKey));
+  const thumbUrl = hasThumb ? (mediaDomain ? `https://${mediaDomain}/${thumbKey}` : `/media/${thumbKey}`) : null;
   const emojis = ["👍", "❤️", "😂", "😮"];
   const safeId = id.replace(/[^a-z0-9-]/g, "");
 
@@ -79,6 +82,10 @@ app.get("/v/:id", async (c) => {
         <meta property="og:type" content="video.other" />
         <meta property="og:title" content={title} />
         {video.description && <meta property="og:description" content={video.description} />}
+        {thumbUrl && <meta property="og:image" content={thumbUrl} />}
+        {thumbUrl && <meta property="og:image:width" content="1280" />}
+        {thumbUrl && <meta property="og:image:height" content="720" />}
+        {thumbUrl && <meta name="twitter:image" content={thumbUrl} />}
         <meta property="og:video" content={mediaUrl} />
         <meta property="og:video:type" content="video/webm" />
         <meta property="og:video:width" content="1920" />
@@ -275,7 +282,7 @@ app.get("/v/:id", async (c) => {
           <div class="content">
             <div class="video-col">
               <div class="player show-ctrl" id="player">
-                <video playsinline preload="metadata" src={mediaUrl} id="vid">
+                <video playsinline preload="metadata" crossorigin="anonymous" src={mediaUrl} id="vid">
                   {transcript && <track kind="captions" src={`/v/${safeId}/captions.vtt`} srclang="en" label="English" />}
                 </video>
                 {suggestedSpeed > 0 && <div class="speed-overlay"></div>}
@@ -444,6 +451,35 @@ app.get("/v/:id", async (c) => {
           var suggestedSpeed=${suggestedSpeed};
 
           fetch('/v/'+videoId+'/view',{method:'POST'});
+
+          // Auto-capture thumbnail if none exists — seek to 25% for a meaningful frame
+          var hasThumb=${hasThumb};
+          if(!hasThumb){
+            vid.addEventListener('loadedmetadata',function thumbCapture(){
+              vid.removeEventListener('loadedmetadata',thumbCapture);
+              var thumbVid=document.createElement('video');
+              thumbVid.crossOrigin='anonymous';
+              thumbVid.preload='auto';
+              thumbVid.muted=true;
+              thumbVid.src=vid.src;
+              thumbVid.addEventListener('loadedmetadata',function(){
+                thumbVid.currentTime=Math.max(1,thumbVid.duration*0.25);
+              });
+              thumbVid.addEventListener('seeked',function(){
+                try{
+                  var c2d=document.createElement('canvas');
+                  c2d.width=Math.min(thumbVid.videoWidth||1280,1280);
+                  c2d.height=Math.round(c2d.width*((thumbVid.videoHeight||720)/(thumbVid.videoWidth||1280)));
+                  var ctx=c2d.getContext('2d');
+                  ctx.drawImage(thumbVid,0,0,c2d.width,c2d.height);
+                  c2d.toBlob(function(blob){
+                    if(blob&&blob.size>1000)fetch('/v/'+videoId+'/thumbnail',{method:'POST',body:blob});
+                    thumbVid.src='';thumbVid.remove();
+                  },'image/jpeg',0.85);
+                }catch(e){thumbVid.remove();}
+              });
+            });
+          }
 
           // Speed suggestion: auto-apply on first play, show time savings
           if(suggestedSpeed>0){
@@ -725,7 +761,7 @@ app.get("/v/:id", async (c) => {
                 var samples=new Float32Array(raw.length);
                 for(var i=0;i<raw.length;i++)samples[i]=raw[i];
                 transcribeBtn.textContent='Transcribing...';
-                var w=new Worker('/dashboard/transcribe-worker.js');
+                var w=new Worker('/dashboard/transcribe-worker.js',{type:'module'});
                 w.postMessage({audio:samples});
                 w.onmessage=function(e){
                   var d=e.data;
@@ -762,6 +798,17 @@ app.post("/v/:id/edit", async (c) => {
   const id = c.req.param("id");
   const { title, description } = await c.req.json<{ title: string; description: string }>();
   await c.env.DB.prepare("UPDATE videos SET title = ?, description = ? WHERE id = ?").bind(title || "", description || "", id).run();
+  return c.json({ ok: true });
+});
+
+// Thumbnail upload (auto-captured from video)
+app.post("/v/:id/thumbnail", async (c) => {
+  const id = c.req.param("id");
+  const video = await c.env.DB.prepare("SELECT id FROM videos WHERE id = ?").bind(id).first();
+  if (!video) return c.json({ ok: false, error: "not found" }, 404);
+  const blob = await c.req.arrayBuffer();
+  if (!blob || blob.byteLength < 100) return c.json({ ok: false, error: "empty" }, 400);
+  await c.env.BUCKET.put(`thumbnails/${id}.jpg`, blob, { httpMetadata: { contentType: "image/jpeg" } });
   return c.json({ ok: true });
 });
 

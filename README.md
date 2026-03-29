@@ -146,6 +146,32 @@ All settings live in `wrangler.toml` — you never need to edit source code.
 | `bucket_name` | Yes | Your R2 bucket name |
 | `R2_PREFIX` | No | Only sync videos under this key prefix (e.g. `uploads/`) |
 | `SITE_NAME` | No | Name shown in the browser tab (default: "Videos") |
+| `MEDIA_DOMAIN` | No | R2 custom domain for CDN-served video (e.g. `media.example.com`) |
+
+## CDN Video Serving (Optional)
+
+By default, videos are proxied through your Worker. For better performance and caching, set up an R2 custom domain:
+
+1. In the Cloudflare dashboard, go to **R2** > your bucket > **Settings** > **Custom Domains** and add a domain (e.g. `media.example.com`)
+2. Under **CORS Policy**, click **Edit** and paste:
+   ```json
+   [
+     {
+       "AllowedOrigins": [
+         "http://localhost:3000",
+         "https://deloom.example.com"
+       ],
+       "AllowedMethods": ["HEAD", "GET"],
+       "AllowedHeaders": ["Range"],
+       "MaxAgeSeconds": 86400
+     }
+   ]
+   ```
+   Replace `deloom.example.com` with your actual domain.
+3. Add `MEDIA_DOMAIN = "media.example.com"` to the `[vars]` section of `wrangler.toml`
+4. Re-deploy with `npm run deploy`
+
+Videos will now be served directly from Cloudflare's CDN edge with proper caching.
 
 ## Local Development
 
