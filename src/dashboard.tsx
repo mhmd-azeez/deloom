@@ -210,10 +210,14 @@ app.post("/login", async (c) => {
 app.post("/logout", async (c) => {
   const token = getSessionToken(c.req.header("cookie"));
   if (token) await deleteSession(c.env.DB, token);
-  return new Response(null, {
+  const res = new Response(null, {
     status: 302,
-    headers: { Location: "/dashboard/login", "Set-Cookie": sessionCookie("", 0) },
+    headers: { Location: "/dashboard/login" },
   });
+  // Clear cookie on both paths (old Path=/dashboard and new Path=/)
+  res.headers.append("Set-Cookie", sessionCookie("", 0));
+  res.headers.append("Set-Cookie", "session=; Path=/dashboard; HttpOnly; SameSite=Lax; Max-Age=0");
+  return res;
 });
 
 // ── Auth middleware: protect all routes below ──
@@ -299,6 +303,7 @@ app.get("/", async (c) => {
                   <td class="muted">{v.size_bytes ? formatBytes(v.size_bytes) : "—"}</td>
                   <td class="muted">{v.uploaded_at ? relativeTime(v.uploaded_at) : "—"}</td>
                   <td style="display:flex;gap:0.25rem">
+                    <a href={`/v/${v.id}`} class="btn btn-sm" style="text-decoration:none" target="_blank">view</a>
                     <a href={`/dashboard/videos/${v.id}`} class="btn btn-sm" style="text-decoration:none">edit</a>
                     <button class="btn btn-sm" onclick={`navigator.clipboard.writeText(location.origin+'/v/${v.id}');this.textContent='copied';setTimeout(()=>this.textContent='copy link',1500)`}>
                       copy link

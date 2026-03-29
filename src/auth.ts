@@ -81,5 +81,5 @@ export function getSessionToken(cookieHeader: string | undefined): string {
 }
 
 export function sessionCookie(token: string, maxAge: number = 30 * 24 * 60 * 60): string {
-  return `session=${token}; Path=/dashboard; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+  return `session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
 }

@@ -1,4 +1,4 @@
-# hosaka-proxy
+# deloom
 
 A Loom-style video watch page with reactions and comments for videos stored in Cloudflare R2.
 
@@ -33,8 +33,8 @@ This opens a browser window — click "Allow" to authorize.
 ### 2. Clone this repo and install dependencies
 
 ```sh
-git clone https://github.com/you/hosaka-proxy
-cd hosaka-proxy
+git clone https://github.com/you/deloom
+cd deloom
 npm install
 ```
 
@@ -53,7 +53,7 @@ If you already have a bucket with videos in it, skip this — just note the buck
 This stores comments, reactions, and view counts:
 
 ```sh
-npx wrangler d1 create hosaka-proxy-db
+npx wrangler d1 create deloom-db
 ```
 
 This prints a database ID — copy it, you'll need it in the next step. It looks something like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
@@ -61,7 +61,7 @@ This prints a database ID — copy it, you'll need it in the next step. It looks
 Now create the tables:
 
 ```sh
-npx wrangler d1 execute hosaka-proxy-db --file=schema.sql
+npx wrangler d1 execute deloom-db --file=schema.sql
 ```
 
 ### 5. Configure
@@ -94,7 +94,7 @@ SITE_NAME = "My Videos"
 npm run deploy
 ```
 
-That's it. Wrangler prints the URL of your worker (something like `https://hosaka-proxy.your-account.workers.dev`).
+That's it. Wrangler prints the URL of your worker (something like `https://deloom.your-account.workers.dev`).
 
 ### 7. Import your videos
 
@@ -108,7 +108,7 @@ Without this step, anyone with the URL can access your dashboard. Cloudflare Acc
 2. If prompted, create a free Zero Trust team (any name works)
 3. Navigate to **Access > Applications > Add an application**
 4. Choose **Self-hosted**
-5. Set the application domain to your worker URL (e.g. `screen.mazeez.dev` or `hosaka-proxy.your-account.workers.dev`)
+5. Set the application domain to your worker URL (e.g. `screen.mazeez.dev` or `deloom.your-account.workers.dev`)
 6. Set the path to `/dashboard*` — this protects all dashboard routes while leaving watch pages public
 7. Click **Next** and create a policy:
    - Policy name: anything (e.g. "Allow me")

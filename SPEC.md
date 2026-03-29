@@ -1,4 +1,4 @@
-# hosaka-proxy — Spec
+# deloom — Spec
 
 A Loom-style video watch + comment layer for videos stored in Cloudflare R2.
 Designed to be minimal, self-hostable, and easy to deploy on Cloudflare's free/cheap tier.
@@ -197,15 +197,15 @@ All behaviour is controlled via `wrangler.toml` vars — **no source code edits 
 
 1. **Clone the repo and install dependencies**
    ```sh
-   git clone https://github.com/you/hosaka-proxy
-   cd hosaka-proxy
+   git clone https://github.com/you/deloom
+   cd deloom
    npm install
    ```
 
 2. **Create the D1 database**
    ```sh
-   wrangler d1 create hosaka-proxy-db
-   wrangler d1 execute hosaka-proxy-db --file=schema.sql
+   wrangler d1 create deloom-db
+   wrangler d1 execute deloom-db --file=schema.sql
    ```
 
 3. **Configure `wrangler.toml`**
@@ -215,13 +215,13 @@ All behaviour is controlled via `wrangler.toml` vars — **no source code edits 
    cp wrangler.toml.example wrangler.toml
    ```
    ```toml
-   name = "hosaka-proxy"
+   name = "deloom"
    main = "src/index.ts"
    compatibility_date = "2024-01-01"
 
    [[d1_databases]]
    binding = "DB"
-   database_name = "hosaka-proxy-db"
+   database_name = "deloom-db"
    database_id = "<your-d1-id>"         # from step 2 output
 
    [[r2_buckets]]

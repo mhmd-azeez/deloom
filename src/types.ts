@@ -4,6 +4,7 @@ export type Bindings = {
 
   R2_PREFIX: string;
   SITE_NAME: string;
+  MEDIA_DOMAIN: string;
 };
 
 export type Video = {

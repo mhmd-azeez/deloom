@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { raw } from "hono/html";
 import type { Bindings, Video, Comment, Reaction, ViewCount, Transcript } from "./types";
 import { generateId, relativeTime, isValidEmoji } from "./utils";
+import { getSessionToken, validateSession } from "./auth";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -17,6 +18,11 @@ app.get("/v/:id", async (c) => {
 
   const video = await db.prepare("SELECT * FROM videos WHERE id = ?").bind(id).first<Video>();
   if (!video) return c.notFound();
+
+  // Check if current user is admin
+  const token = getSessionToken(c.req.header("cookie"));
+  const session = token ? await validateSession(db, token) : null;
+  const isAdmin = !!session;
 
   const [commentsResult, reactionsResult, viewResult, transcript] = await Promise.all([
     db.prepare("SELECT * FROM comments WHERE video_id = ? AND deleted = 0 ORDER BY created_at ASC").bind(id).all<Comment>(),
@@ -59,7 +65,8 @@ app.get("/v/:id", async (c) => {
 
   const siteName = c.env.SITE_NAME || "Videos";
   const title = video.title || "Untitled";
-  const mediaUrl = `/media/${encodeURIComponent(video.r2_key)}`;
+  const mediaDomain = c.env.MEDIA_DOMAIN;
+  const mediaUrl = mediaDomain ? `https://${mediaDomain}/${video.r2_key}` : `/media/${encodeURIComponent(video.r2_key)}`;
   const emojis = ["👍", "❤️", "😂", "😮"];
   const safeId = id.replace(/[^a-z0-9-]/g, "");
 
@@ -72,17 +79,35 @@ app.get("/v/:id", async (c) => {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-        <style>{`
+        <style>{raw(`
           :root { --bg:#fff; --bg-page:#f9f9f8; --text:#171717; --text-2:#525252; --text-3:#a3a3a3; --border:#e5e5e5; --border-light:#f0f0f0; --accent:#5e6ad2; --accent-light:#eef0ff; --player-accent:#f97316; --radius:8px; --sans:'Manrope',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',monospace; --display:'Fraunces',Georgia,serif; }
           *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
           html{background:var(--bg-page)}body{font-family:var(--sans);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-          .page{max-width:1200px;margin:0 auto;padding:2rem 2rem 4rem}
+          .page{max-width:1440px;margin:0 auto;padding:1.5rem 2rem 4rem}
           .header{margin-bottom:1.25rem}.header-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
           .header h1{font-family:var(--display);font-size:1.625rem;font-weight:300;line-height:1.2;letter-spacing:-0.01em;font-style:italic}
           .header-meta{margin-top:0.25rem;font-size:0.8125rem;color:var(--text-3)}
-          .header-desc{margin-top:0.5rem;font-size:0.875rem;color:var(--text-2);max-width:640px}
+          .header-desc{margin-top:0.5rem;font-size:0.875rem;color:var(--text-2);max-width:640px;min-height:1.5em}
+          [contenteditable]{outline:none;border-radius:4px;padding:2px 6px;margin:-2px -6px;transition:background 0.15s}
+          [contenteditable]:hover{background:rgba(0,0,0,0.04)}
+          [contenteditable]:focus{background:rgba(94,106,210,0.08);box-shadow:0 0 0 2px var(--accent)}
+          [contenteditable]:empty::before{content:attr(data-placeholder);color:var(--text-3)}
+          .admin-bar{display:flex;align-items:center;justify-content:space-between;padding:0.5rem 2rem;background:var(--bg);border-bottom:1px solid var(--border);font-size:0.8125rem}
+          .admin-bar a{color:var(--accent);text-decoration:none;font-weight:500}.admin-bar a:hover{text-decoration:underline}
+          .admin-bar-right{display:flex;align-items:center;gap:1rem;color:var(--text-3)}
+          .admin-bar-right form{margin:0}
+          .admin-bar-logout{color:var(--text-3);font-size:0.8125rem;background:none;border:none;cursor:pointer;font-family:var(--sans);text-decoration:underline;text-underline-offset:2px}.admin-bar-logout:hover{color:var(--text)}
+          body.theatre .admin-bar{background:#141414;border-color:#333}
+          body.theatre .admin-bar-right{color:#737373}
+          body.theatre .admin-bar-logout{color:#737373}
+          .transcribe-btn{margin-left:0.75rem;padding:0.2rem 0.625rem;font-family:var(--sans);font-size:0.6875rem;font-weight:600;color:var(--accent);background:var(--accent-light);border:1px solid transparent;border-radius:4px;cursor:pointer;transition:background 0.15s,border-color 0.15s}
+          .transcribe-btn:hover{border-color:var(--accent)}
+          .transcribe-btn.retranscribe{color:var(--text-3);background:var(--bg-page)}
+          .transcribe-btn:disabled{opacity:0.5;cursor:default}
+          .save-toast{position:fixed;top:1rem;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;font-family:var(--sans);font-size:0.8125rem;font-weight:500;padding:0.5rem 1.25rem;border-radius:8px;z-index:100;opacity:0;transition:opacity 0.2s;pointer-events:none}
+          .save-toast.visible{opacity:1}
           .views-pill{flex-shrink:0;font-size:0.75rem;font-family:var(--mono);color:var(--text-2);background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:0.25rem 0.75rem;white-space:nowrap}
-          .content{display:grid;grid-template-columns:1fr 320px;gap:0;align-items:start}.video-col{min-width:0}
+          .content{display:grid;grid-template-columns:1fr 340px;gap:0;align-items:start}.video-col{min-width:0}
           .player{position:relative;background:#000;border-radius:var(--radius) var(--radius) 0 0;overflow:hidden;line-height:0;cursor:pointer;user-select:none}
           .player video{width:100%;display:block;aspect-ratio:16/9;object-fit:contain}
           .big-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:64px;height:64px;background:rgba(255,255,255,0.95);border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,0.3);transition:transform 0.15s;z-index:3}
@@ -114,7 +139,7 @@ app.get("/v/:id", async (c) => {
           .ctrl-row{display:flex;align-items:center;gap:0.125rem}
           .ctrl-btn{background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;padding:0.5rem;display:flex;align-items:center;border-radius:8px;transition:color 0.15s,background 0.15s}.ctrl-btn:hover{color:#fff;background:rgba(255,255,255,0.12)}.ctrl-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
           .ctrl-time{font-family:var(--mono);font-size:0.6875rem;color:rgba(255,255,255,0.6);white-space:nowrap;margin:0 0.375rem}.ctrl-spacer{flex:1}
-          .speed-btn{background:rgba(255,255,255,0.1);border:none;color:rgba(255,255,255,0.9);font-family:var(--mono);font-size:0.6875rem;font-weight:600;padding:0.25rem 0.625rem;cursor:pointer;border-radius:20px;letter-spacing:0.02em;transition:background 0.15s,color 0.15s}.speed-btn:hover{background:rgba(255,255,255,0.2);color:#fff}
+          .speed-btn{background:rgba(255,255,255,0.1);border:none;color:rgba(255,255,255,0.9);font-family:var(--sans);font-size:0.6875rem;font-weight:600;padding:0.25rem 0.625rem;cursor:pointer;border-radius:20px;letter-spacing:0.02em;transition:background 0.15s,color 0.15s}.speed-btn:hover{background:rgba(255,255,255,0.2);color:#fff}
           .vol-group{display:flex;align-items:center;gap:0.375rem}.vol-track{width:60px;height:3px;background:rgba(255,255,255,0.2);cursor:pointer;border-radius:2px;transition:height 0.1s;flex-shrink:0}.vol-track:hover{height:5px}.vol-fill{height:100%;width:100%;background:#fff;border-radius:2px;pointer-events:none}
           .reactions-bar{display:flex;align-items:center;justify-content:center;gap:0.25rem;padding:0.75rem 1rem;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius)}
           .react-btn{display:flex;align-items:center;gap:0.25rem;padding:0.375rem 0.625rem;border:none;background:none;font-size:1.125rem;cursor:pointer;border-radius:6px;transition:background 0.1s;line-height:1}.react-btn:hover{background:var(--border-light)}.react-btn.reacted{background:var(--accent-light)}
@@ -149,7 +174,7 @@ app.get("/v/:id", async (c) => {
           .activity-emoji{font-size:1.25rem;margin-top:0.125rem;display:block}
           .empty-activity{padding:3rem 1rem;text-align:center;color:var(--text-3);font-size:0.8125rem}
           .empty-activity strong{display:block;color:var(--text-2);margin-bottom:0.25rem;font-size:0.875rem}
-.transcript-panel{flex:1;overflow-y:auto;padding:0;display:none}
+          .transcript-panel{flex:1;overflow-y:auto;padding:0;display:none}
           .transcript-segment{padding:0.5rem 1rem;display:flex;gap:0.75rem;cursor:pointer;transition:background 0.1s}
           .transcript-segment:hover{background:var(--bg-page)}
           .transcript-segment.active{background:var(--accent-light)}
@@ -158,40 +183,73 @@ app.get("/v/:id", async (c) => {
           .transcript-text{font-size:0.8125rem;color:var(--text-2);line-height:1.5}
           /* Player-level emoji popup — not affected by controls opacity */
           .marker-popup{position:absolute;bottom:4.5rem;transform:translateX(-50%);font-size:1.75rem;z-index:10;pointer-events:none;animation:markerPopAnim 2.5s ease forwards;filter:drop-shadow(0 3px 8px rgba(0,0,0,0.5))}
-          .player:hover .marker-popup,.player.show-ctrl .marker-popup{bottom:6.5rem}
-          .popup-name{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);white-space:nowrap;font-family:var(--sans);font-size:0.625rem;font-weight:500;color:#fff;background:rgba(0,0,0,0.8);padding:2px 8px;border-radius:4px;pointer-events:none}
+          .player:hover .marker-popup,.player.show-ctrl .marker-popup{bottom:7.5rem}
+          .popup-name{position:absolute;bottom:calc(100% + 20px);left:50%;transform:translateX(-50%);white-space:nowrap;font-family:var(--sans);font-size:0.625rem;font-weight:500;color:#fff;background:rgba(0,0,0,0.8);padding:2px 8px;border-radius:4px;pointer-events:none}
           @keyframes markerPopAnim{0%{transform:translateX(-50%) scale(0);opacity:0}15%{transform:translateX(-50%) scale(1.8);opacity:1}35%{transform:translateX(-50%) scale(1.4);opacity:1}85%{transform:translateX(-50%) scale(1.3);opacity:1}100%{transform:translateX(-50%) scale(0.8);opacity:0}}
           video::cue{font-size:0;line-height:0}
           .subtitle-overlay{position:absolute;bottom:1.25rem;left:50%;transform:translateX(-50%);z-index:7;pointer-events:none;text-align:center;max-width:78%;opacity:0;transition:opacity 0.2s,bottom 0.22s ease;white-space:pre-wrap}
           .subtitle-overlay.visible{opacity:1}
-          .player:hover .subtitle-overlay,.player.show-ctrl .subtitle-overlay{bottom:5.5rem}
+          .player:hover .subtitle-overlay,.player.show-ctrl .subtitle-overlay{bottom:7rem}
           .subtitle-overlay span{font-family:var(--sans);font-size:0.9375rem;font-weight:500;color:#fff;background:rgba(0,0,0,0.72);padding:5px 14px;border-radius:6px;line-height:1.65;display:inline;box-decoration-break:clone;-webkit-box-decoration-break:clone}
           .subtitle-toggle{position:relative}.subtitle-toggle.active svg{color:#fff}
           .subtitle-toggle .cc-dot{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--accent);opacity:0;transition:opacity 0.15s}.subtitle-toggle.active .cc-dot{opacity:1}
           .theatre-btn.active svg{color:#fff}
-          body.theatre{background:#0a0a0a}
+          body.theatre{background:#0a0a0a;color:#e5e5e5}
           body.theatre .page{max-width:100%;padding:0}
           body.theatre .header{padding:1rem 2rem;margin-bottom:0}
+          body.theatre .header h1{color:#f5f5f5}
+          body.theatre .header-meta{color:#737373}
+          body.theatre .header-desc{color:#a3a3a3}
+          body.theatre .views-pill{color:#a3a3a3;background:#1a1a1a;border-color:#333}
           body.theatre .content{grid-template-columns:1fr;gap:0}
           body.theatre .sidebar{display:none}
           body.theatre .player{border-radius:0}
-          body.theatre .reactions-bar{border-radius:0;border-left:none;border-right:none}
-          body.theatre .sidebar{border-radius:0;border-right:none}
+          body.theatre .reactions-bar{background:#141414;border-color:#333;border-radius:0;border-left:none;border-right:none}
+          body.theatre .react-btn:hover{background:#262626}
+          body.theatre .react-count{color:#737373}
+          body.theatre .comment-trigger{background:#1a1a1a;border-color:#333;color:#e5e5e5}
+          body.theatre .comment-trigger:hover{background:#262626;border-color:#525252}
           body.theatre .video-col{min-width:0}
+          body.theatre [contenteditable]:hover{background:rgba(255,255,255,0.06)}
+          body.theatre [contenteditable]:focus{background:rgba(94,106,210,0.15)}
+          body.theatre .transcribe-btn{background:#1a1a1a;color:var(--accent)}
           @media(max-width:860px){.page{padding:1rem}.content{grid-template-columns:1fr}.sidebar{border-left:1px solid var(--border);border-radius:var(--radius);margin-top:1rem;max-height:none}.player{border-radius:var(--radius) var(--radius) 0 0}.reactions-bar{border-radius:0 0 var(--radius) var(--radius)}}
-        `}</style>
+        `)}</style>
       </head>
       <body>
+        {isAdmin && (
+          <div class="admin-bar">
+            <a href="/dashboard">Dashboard</a>
+            <div class="admin-bar-right">
+              <span>{session!.email}</span>
+              <form method="post" action="/dashboard/logout">
+                <button type="submit" class="admin-bar-logout">Log out</button>
+              </form>
+            </div>
+          </div>
+        )}
         <div class="page">
           <div class="header">
             <div class="header-row">
-              <div>
-                <h1>{title}</h1>
-                <div class="header-meta">{video.uploaded_at && <>{relativeTime(video.uploaded_at)}</>}</div>
+              <div style="flex:1;min-width:0">
+                {isAdmin ? (
+                  <h1 contenteditable="plaintext-only" id="edit-title" spellcheck={false} data-placeholder="Untitled">{title}</h1>
+                ) : (
+                  <h1>{title}</h1>
+                )}
+                <div class="header-meta">
+                  {video.uploaded_at && <>{relativeTime(video.uploaded_at)}</>}
+                  {isAdmin && !transcript && <button class="transcribe-btn" id="transcribe-btn">{"\u00A0"}Transcribe</button>}
+                  {isAdmin && transcript && <button class="transcribe-btn retranscribe" id="transcribe-btn">{"\u00A0"}Re-transcribe</button>}
+                </div>
               </div>
               <span class="views-pill">{viewCount.toLocaleString()} views</span>
             </div>
-            {video.description && <p class="header-desc">{video.description}</p>}
+            {isAdmin ? (
+              <p contenteditable="plaintext-only" id="edit-desc" class="header-desc" spellcheck={false} data-placeholder="Add a description...">{video.description || ""}</p>
+            ) : (
+              video.description && <p class="header-desc">{video.description}</p>
+            )}
           </div>
 
           <div class="content">
@@ -272,10 +330,18 @@ app.get("/v/:id", async (c) => {
               </div>
               <div class="comment-input-area">
                 <form id="comment-form" onsubmit="return submitComment(event)">
-                  <div class="comment-input-row">
-                    <input type="text" placeholder="Name" required id="comment-name" />
-                    <input type="email" placeholder="Email" required id="comment-email" />
-                  </div>
+                  {!isAdmin && (
+                    <div class="comment-input-row">
+                      <input type="text" placeholder="Name" required id="comment-name" />
+                      <input type="email" placeholder="Email" required id="comment-email" />
+                    </div>
+                  )}
+                  {isAdmin && (
+                    <>
+                      <input type="hidden" id="comment-name" value={session!.email.split("@")[0]} />
+                      <input type="hidden" id="comment-email" value={session!.email} />
+                    </>
+                  )}
                   <textarea placeholder="Leave a comment..." required id="comment-body"></textarea>
                   <div class="comment-submit-row">
                     <span class="timestamp-badge" id="comment-ts-badge">0:00</span>
@@ -369,7 +435,7 @@ app.get("/v/:id", async (c) => {
             // Auto-apply suggested speed on first play
             var firstPlay=true;
             vid.addEventListener('play',function(){
-              if(firstPlay){firstPlay=false;vid.playbackRate=suggestedSpeed;speedBtn.textContent=suggestedSpeed+'x';}
+              if(firstPlay){firstPlay=false;vid.playbackRate=suggestedSpeed;speedBtn.textContent=suggestedSpeed+'x';var si=speeds.indexOf(suggestedSpeed);if(si>=0)speedIdx=si;}
             });
           }
 
@@ -399,7 +465,7 @@ app.get("/v/:id", async (c) => {
 
           vid.addEventListener('play',syncState);
           vid.addEventListener('pause',syncState);
-          vid.addEventListener('ended',function(){syncState();progressFill.style.width='100%';});
+          vid.addEventListener('ended',function(){syncState();progressFill.style.width='100%';if(seekMiniFill)seekMiniFill.style.width='100%';});
           vid.addEventListener('loadedmetadata',function(){timeDisplay.textContent='0:00 / '+fmt(vid.duration);renderMarkers();});
 
           playBtn.addEventListener('click',function(e){e.stopPropagation();togglePlay();});
@@ -507,8 +573,8 @@ app.get("/v/:id", async (c) => {
           });
 
           document.addEventListener('keydown',function(e){
-            if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
-            switch(e.key){case ' ':case 'k':e.preventDefault();togglePlay();break;case 'ArrowLeft':vid.currentTime=Math.max(0,vid.currentTime-5);break;case 'ArrowRight':vid.currentTime=Math.min(vid.duration||0,vid.currentTime+5);break;case 'j':vid.currentTime=Math.max(0,vid.currentTime-10);break;case 'l':vid.currentTime=Math.min(vid.duration||0,vid.currentTime+10);break;case 'm':volBtn.click();break;case 'f':fsBtn.click();break;case 't':theatreBtn.click();break;case 'c':document.getElementById('comment-body').focus();break;}
+            if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable)return;
+            switch(e.key){case ' ':case 'k':e.preventDefault();togglePlay();break;case 'ArrowLeft':vid.currentTime=Math.max(0,vid.currentTime-5);break;case 'ArrowRight':vid.currentTime=Math.min(vid.duration||0,vid.currentTime+5);break;case 'j':vid.currentTime=Math.max(0,vid.currentTime-10);break;case 'l':vid.currentTime=Math.min(vid.duration||0,vid.currentTime+10);break;case 'm':volBtn.click();break;case 'f':fsBtn.click();break;case 't':theatreBtn.click();break;case 's':if(ccBtn)ccBtn.click();break;case 'c':document.getElementById('comment-body').focus();break;}
           });
 
           var hideTimer;
@@ -541,7 +607,7 @@ app.get("/v/:id", async (c) => {
                 var pct=(ts/vid.duration*100)+'%';
                 var popup=document.createElement('span');
                 popup.className='marker-popup';
-                popup.setAttribute('data-ts',ts);
+                popup.setAttribute('data-key',ts+'_'+emoji);
                 popup.textContent=emoji;
                 if(name){var tip=document.createElement('span');tip.className='popup-name';tip.textContent=name;popup.appendChild(tip);}
                 popup.style.left=pct;
@@ -601,9 +667,78 @@ app.get("/v/:id", async (c) => {
           };
         })();
         </script>`)}
+        {isAdmin && raw(`<div class="save-toast" id="save-toast">Saved</div>
+        <script>
+        (function(){
+          var videoId=${JSON.stringify(safeId)};
+          var saveTimer,saving=false;
+          function showToast(msg){var t=document.getElementById('save-toast');t.textContent=msg||'Saved';t.classList.add('visible');clearTimeout(saveTimer);saveTimer=setTimeout(function(){t.classList.remove('visible');},1500);}
+          function saveMetadata(){
+            if(saving)return;saving=true;
+            var title=(document.getElementById('edit-title')||{}).textContent||'';
+            var desc=(document.getElementById('edit-desc')||{}).textContent||'';
+            fetch('/v/'+videoId+'/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.trim(),description:desc.trim()})})
+            .then(function(r){return r.json();}).then(function(d){if(d.ok)showToast('Saved');}).finally(function(){saving=false;});
+          }
+          // Auto-save on blur
+          var titleEl=document.getElementById('edit-title');
+          var descEl=document.getElementById('edit-desc');
+          if(titleEl)titleEl.addEventListener('blur',saveMetadata);
+          if(descEl)descEl.addEventListener('blur',saveMetadata);
+
+          // Transcribe button
+          var transcribeBtn=document.getElementById('transcribe-btn');
+          if(transcribeBtn){
+            transcribeBtn.addEventListener('click',function(){
+              transcribeBtn.disabled=true;transcribeBtn.textContent='Loading model...';
+              var mediaUrl=${JSON.stringify(mediaUrl)};
+              fetch(mediaUrl).then(function(r){return r.arrayBuffer();}).then(function(buf){
+                transcribeBtn.textContent='Decoding audio...';
+                var actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+                return actx.decodeAudioData(buf);
+              }).then(function(audio){
+                var raw=audio.getChannelData(0);
+                var samples=new Float32Array(raw.length);
+                for(var i=0;i<raw.length;i++)samples[i]=raw[i];
+                transcribeBtn.textContent='Transcribing...';
+                var w=new Worker('/dashboard/transcribe-worker.js');
+                w.postMessage({audio:samples});
+                w.onmessage=function(e){
+                  var d=e.data;
+                  if(d.status==='progress'){transcribeBtn.textContent='Transcribing... '+Math.round((d.progress||0)*100)+'%';}
+                  else if(d.status==='complete'){
+                    var segs=d.segments||[];
+                    var fullText=segs.map(function(s){return s.text;}).join(' ');
+                    // Build VTT
+                    var vtt='WEBVTT\\n\\n';
+                    segs.forEach(function(s,i){
+                      function vttTime(t){var h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=t%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+sc.toFixed(3).padStart(6,'0');}
+                      vtt+=(i+1)+'\\n'+vttTime(s.start)+' --> '+vttTime(s.end)+'\\n'+s.text+'\\n\\n';
+                    });
+                    fetch('/dashboard/videos/'+videoId+'/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_text:fullText,segments:segs,vtt:vtt})})
+                    .then(function(){showToast('Transcription saved');setTimeout(function(){location.reload();},800);});
+                  }
+                  else if(d.status==='error'){transcribeBtn.textContent='Error';transcribeBtn.disabled=false;}
+                };
+              });
+            });
+          }
+        })();
+        </script>`)}
       </body>
     </html>
   );
+});
+
+// Edit video metadata (requires auth)
+app.post("/v/:id/edit", async (c) => {
+  const token = getSessionToken(c.req.header("cookie"));
+  const session = token ? await validateSession(c.env.DB, token) : null;
+  if (!session) return c.json({ ok: false, error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const { title, description } = await c.req.json<{ title: string; description: string }>();
+  await c.env.DB.prepare("UPDATE videos SET title = ?, description = ? WHERE id = ?").bind(title || "", description || "", id).run();
+  return c.json({ ok: true });
 });
 
 // Captions VTT
@@ -627,7 +762,8 @@ app.get("/embed/:id", async (c) => {
     c.env.DB.prepare("SELECT 1 FROM transcripts WHERE video_id = ? AND status = 'done'").bind(id).first(),
   ]);
   if (!video) return c.notFound();
-  const mediaUrl = `/media/${encodeURIComponent(video.r2_key)}`;
+  const mediaDomain = c.env.MEDIA_DOMAIN;
+  const mediaUrl = mediaDomain ? `https://${mediaDomain}/${video.r2_key}` : `/media/${encodeURIComponent(video.r2_key)}`;
   const safeId = id.replace(/[^a-z0-9-]/g, "");
   return c.html(
     <html lang="en">
