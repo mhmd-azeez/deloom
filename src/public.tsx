@@ -76,6 +76,22 @@ app.get("/v/:id", async (c) => {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{`${title} — ${siteName}`}</title>
+        <meta property="og:type" content="video.other" />
+        <meta property="og:title" content={title} />
+        {video.description && <meta property="og:description" content={video.description} />}
+        <meta property="og:video" content={mediaUrl} />
+        <meta property="og:video:type" content="video/webm" />
+        <meta property="og:video:width" content="1920" />
+        <meta property="og:video:height" content="1080" />
+        <meta property="og:url" content={`${c.req.url}`} />
+        <meta property="og:site_name" content={siteName} />
+        <meta name="twitter:card" content="player" />
+        <meta name="twitter:title" content={title} />
+        {video.description && <meta name="twitter:description" content={video.description} />}
+        <meta name="twitter:player" content={`${new URL(c.req.url).origin}/embed/${safeId}`} />
+        <meta name="twitter:player:width" content="1920" />
+        <meta name="twitter:player:height" content="1080" />
+        <link rel="alternate" type="application/json+oembed" href={`${new URL(c.req.url).origin}/v/${safeId}/oembed`} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -747,6 +763,25 @@ app.post("/v/:id/edit", async (c) => {
   const { title, description } = await c.req.json<{ title: string; description: string }>();
   await c.env.DB.prepare("UPDATE videos SET title = ?, description = ? WHERE id = ?").bind(title || "", description || "", id).run();
   return c.json({ ok: true });
+});
+
+// oEmbed
+app.get("/v/:id/oembed", async (c) => {
+  const id = c.req.param("id");
+  const video = await c.env.DB.prepare("SELECT title FROM videos WHERE id = ?").bind(id).first<{ title: string | null }>();
+  if (!video) return c.notFound();
+  const origin = new URL(c.req.url).origin;
+  const safeId = id.replace(/[^a-z0-9-]/g, "");
+  return c.json({
+    version: "1.0",
+    type: "video",
+    title: video.title || "Untitled",
+    provider_name: c.env.SITE_NAME || "Deloom",
+    provider_url: origin,
+    html: `<iframe src="${origin}/embed/${safeId}" width="1920" height="1080" frameborder="0" allowfullscreen></iframe>`,
+    width: 1920,
+    height: 1080,
+  });
 });
 
 // Captions VTT
