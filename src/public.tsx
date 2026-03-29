@@ -213,6 +213,10 @@ app.get("/v/:id", async (c) => {
           body.theatre [contenteditable]:hover{background:rgba(255,255,255,0.06)}
           body.theatre [contenteditable]:focus{background:rgba(94,106,210,0.15)}
           body.theatre .transcribe-btn{background:#1a1a1a;color:var(--accent)}
+          .watermark{display:flex;align-items:center;justify-content:center;gap:0.375rem;padding:1.5rem 0 0;font-size:0.6875rem;color:var(--text-3)}
+          .watermark a{color:var(--text-3);text-decoration:none;font-weight:500;transition:color 0.15s}.watermark a:hover{color:var(--text-2)}
+          .watermark svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:0.5}
+          body.theatre .watermark{color:#525252}body.theatre .watermark a{color:#525252}body.theatre .watermark a:hover{color:#a3a3a3}
           @media(max-width:860px){.page{padding:1rem}.content{grid-template-columns:1fr}.sidebar{border-left:1px solid var(--border);border-radius:var(--radius);margin-top:1rem;max-height:none}.player{border-radius:var(--radius) var(--radius) 0 0}.reactions-bar{border-radius:0 0 var(--radius) var(--radius)}}
         `)}</style>
       </head>
@@ -401,6 +405,10 @@ app.get("/v/:id", async (c) => {
                 </div>
               )}
             </div>
+          </div>
+          <div class="watermark">
+            Powered by <a href="https://github.com/mhmd-azeez/deloom" target="_blank">deloom</a>
+            <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
           </div>
         </div>
 
